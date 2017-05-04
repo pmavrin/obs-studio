@@ -5,11 +5,17 @@ endif()
 
 add_subdirectory(glad)
 add_subdirectory(ipc-util)
-add_subdirectory(libff)
+
+if(BUILD_LIBFF)
+	add_subdirectory(libff)
+endif()
+
+add_subdirectory(media-playback)
 add_subdirectory(file-updater)
 
 if(WIN32)
 	add_subdirectory(blake2)
+	add_subdirectory(lzma)
 endif()
 
 if(BUILD_CAPTIONS)
