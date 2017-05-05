@@ -22,6 +22,9 @@ if(WIN32)
 	if (MSVC)
 		add_subdirectory(win-ivcam)
 	endif()
+
+	add_subdirectory(win-overlaymaster)
+
 elseif(APPLE)
 	add_subdirectory(coreaudio-encoder)
 	add_subdirectory(mac-avcapture)
