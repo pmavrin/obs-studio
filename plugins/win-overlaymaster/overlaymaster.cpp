@@ -5,6 +5,9 @@
 OBS_DECLARE_MODULE()
 OBS_MODULE_USE_DEFAULT_LOCALE("win-overlaymaster", "en-US")
 
+const int MAX_WIDTH = 1920;
+const int MAX_HEIGHT = 1080;
+
 struct overlay_source {
 	obs_source_t *source;
     
@@ -13,18 +16,15 @@ struct overlay_source {
 	int height;
 	gs_texture* texture = nullptr;
 	uint8_t* buf;
+
+	boost::interprocess::file_mapping m_file;
+	boost::interprocess::mapped_region region;
 };
 
 static const char *overlay_getname(void *unused)
 {
 	UNUSED_PARAMETER(unused);
 	return "Overlay Master";
-}
-
-
-void release_file(char* file)
-{
-	
 }
 
 static void overlay_update(void *data, obs_data_t *settings)
@@ -34,49 +34,41 @@ static void overlay_update(void *data, obs_data_t *settings)
 	const int width = obs_data_get_int(settings, "width");
 	const int height = obs_data_get_int(settings, "height");
 
-	if (overlay->file)
-		release_file(overlay->file);
 	overlay->file = bstrdup(file);
 	overlay->height = height;
 	overlay->width = width;
-	
-	int size = overlay->width * overlay->height * 4;
-	
-	
+
+	obs_enter_graphics();
 	if (overlay->texture)
 	{
 		gs_texture_destroy(overlay->texture);
 	}
-	overlay->texture = gs_texture_create(
-		overlay->width, overlay->height, GS_BGRA, 1, (const uint8_t**)&(overlay->buf), 0);
-		
-}
+	overlay->texture = gs_texture_create(overlay->width, overlay->height, GS_RGBA, 1, NULL, GS_DYNAMIC);
+	gs_texture_set_image(overlay->texture,
+		(const uint8_t*)overlay->buf, overlay->width * 4, false);
+	obs_leave_graphics();
 
-boost::interprocess::file_mapping m_file;
-boost::interprocess::mapped_region region;
+	try {
+		overlay->m_file = boost::interprocess::file_mapping(file, boost::interprocess::read_only);
+		overlay->region = boost::interprocess::mapped_region(overlay->m_file, boost::interprocess::read_only);
+	}
+	catch (boost::interprocess::interprocess_exception)
+	{
+		overlay->m_file = boost::interprocess::file_mapping();
+	}
+}
 
 static void *overlay_create(obs_data_t *settings, obs_source_t *source)
 {
 	struct overlay_source *overlay = static_cast<struct overlay_source*>(bzalloc(sizeof(struct overlay_source)));
 	overlay->source = source;
-	overlay_update(overlay, settings);
-
-	overlay->buf = new uint8_t[1920 * 1080 * 4];
+	overlay->buf = new uint8_t[MAX_WIDTH * MAX_HEIGHT * 4];
 	
-	for (int i = 0; i < 1920 * 1080 * 4; i++) {
+	for (int i = 0; i < MAX_WIDTH * MAX_HEIGHT * 4; i++) {
 		overlay->buf[i] = (i & 255);
 	}
 
-	obs_enter_graphics();
-	overlay->texture = gs_texture_create(overlay->width, overlay->height, GS_RGBA, 1, NULL, GS_DYNAMIC);
-	gs_texture_set_image(overlay->texture,
-		(const uint8_t*)overlay->buf, overlay->width * 4, false);
-	obs_leave_graphics();
-	//gs_texture_set_image(overlay->texture, )
-	obs_leave_graphics();
-
-	m_file = boost::interprocess::file_mapping("c:\\work\\image.bin", boost::interprocess::read_only);
-	region = boost::interprocess::mapped_region(m_file, boost::interprocess::read_only);
+	overlay_update(overlay, settings);
 
 	return overlay;
 }
@@ -105,18 +97,17 @@ int c = 0;
 static void overlay_render(void *data, gs_effect_t *effect)
 {
 	struct overlay_source *overlay = static_cast<struct overlay_source*>(data);
-	if (!overlay->texture)
+	if (!overlay->texture || !overlay->m_file.get_name())
 	{
-
 		draw_solid(overlay, 0x88000088);
 		return;
 	}
 	
 	obs_enter_graphics();
 	
-	void* addr = region.get_address();
+	void* addr = overlay->region.get_address();
 	const char* mem = static_cast<char*>(addr);
-	std::size_t len = region.get_size();
+	std::size_t len = overlay->region.get_size();
 	
 	memcpy(overlay->buf, mem, len);
 	
@@ -126,7 +117,6 @@ static void overlay_render(void *data, gs_effect_t *effect)
 	while (gs_effect_loop(obs_get_base_effect(OBS_EFFECT_DEFAULT), "Draw"))
 		obs_source_draw(overlay->texture, 0, 0, 0, 0, false);
 
-//	draw_solid(overlay, 0x22ffffff);
 	obs_leave_graphics();
 }
 
