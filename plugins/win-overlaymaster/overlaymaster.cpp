@@ -16,6 +16,8 @@ struct overlay_source {
 	int height;
 	gs_texture* texture = nullptr;
 	uint8_t* buf;
+	int last_frame;
+	int same_frame_cnt;
 
 	boost::interprocess::file_mapping m_file;
 	boost::interprocess::mapped_region region;
@@ -86,13 +88,12 @@ static void draw_solid(overlay_source* overlay, int color)
 	gs_technique_begin(tech);
 	gs_technique_begin_pass(tech, 0);
 
-	gs_draw_sprite(0, 0, overlay->width, overlay->height);
+	gs_draw_sprite_subregion(0, 0, 10, 10, 10, 10);
+	//gs_draw_sprite(0, 0, overlay->width, overlay->height);
 
 	gs_technique_end_pass(tech);
 	gs_technique_end(tech);
 }
-
-int c = 0;
 
 static void overlay_render(void *data, gs_effect_t *effect)
 {
@@ -108,11 +109,37 @@ static void overlay_render(void *data, gs_effect_t *effect)
 	void* addr = overlay->region.get_address();
 	const char* mem = static_cast<char*>(addr);
 	std::size_t len = overlay->region.get_size();
+
+	if (len < overlay->width * overlay->height * 4)
+	{
+		draw_solid(overlay, 0x88000088);
+		return;
+	}
+
+	/*
+	int frame = *((int*)mem);
+	if (frame == overlay->last_frame)
+	{
+		overlay->same_frame_cnt++;
+	} else
+	{
+		overlay->same_frame_cnt = 0;
+	}
+	overlay->last_frame = frame;
 	
-	memcpy(overlay->buf, mem, len);
+	if (overlay->same_frame_cnt > 10)
+	{
+		draw_solid(overlay, 0x88880088);
+		return;
+	}
+	*/
+	//	memcpy(overlay->buf, mem, len);
 	
+//	gs_texture_set_image(overlay->texture,
+//		(const uint8_t*)overlay->buf, overlay->width * 4, false);
+
 	gs_texture_set_image(overlay->texture,
-		(const uint8_t*)overlay->buf, overlay->width * 4, false);
+		(const uint8_t*)mem, overlay->width * 4, false);
 
 	while (gs_effect_loop(obs_get_base_effect(OBS_EFFECT_DEFAULT), "Draw"))
 		obs_source_draw(overlay->texture, 0, 0, 0, 0, false);
